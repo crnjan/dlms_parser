@@ -63,8 +63,8 @@ Slovenian Iskra AM550 pushes a flat 18-element STRUCTURE; element 2 is active po
 parser.register_pattern("AM550 P+", "CNT(18), IDX(2), TV", 0, dlms_parser::ObisId(1, 0, 1, 7, 0, 255));
 parser.register_pattern("AM550 ID", "CNT(18), IDX(0), TSTR", 0, dlms_parser::ObisId(0, 0, 42, 0, 0, 255));
 ```
-- Register a pattern for every element index of a positional telegram; otherwise a built-in multi-element pattern
-  (e.g. `TO, TV`) may match an unregistered element and consume the next one.
+- Elements without a pattern are tried against the built-in patterns. If an unregistered element could start a built-in
+  multi-element pattern (e.g. `TO, TV`), it may consume the next element too, so register patterns for such elements as well.
 - `IDX`/`CNT` apply to the sequence being scanned, including nested ones the parser descends into, so combine `IDX` with `CNT`.
   Inside `S(...)` they are rejected.
 - An invalid argument (e.g. `IDX()`, `IDX(x)`, `CNT(0)`, `IDX(127)`) rejects the whole pattern (logged as a warning).
