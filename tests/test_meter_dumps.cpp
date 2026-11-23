@@ -281,6 +281,29 @@ TEST_CASE_FIXTURE(LogFixture, "Integration: HDLC") {
     );
   }
 
+  SUBCASE("Iskra AM550: empty and guard-only patterns never match") {
+    const auto obis = dlms_parser::ObisId(1, 0, 1, 7, 0, 255);
+    const auto register_guards = [obis](dlms_parser::DlmsParser& p) {
+      p.register_pattern("empty S(@1)", "S(@1)", 10, obis);
+      p.register_pattern("empty S()", "S()", 10, obis);
+      p.register_pattern("guard f, c, l", "f, c, l", 10, obis);
+      p.register_pattern("guard #18, @2", "#18, @2", 10, obis);
+      p.register_pattern("guard F", "F", 10, obis);
+    };
+    run_meter_test(dlms::test_data::iskra_am550_5s_raw_frame, 0, {}, {}, register_guards);
+
+    run_meter_test(
+      dlms::test_data::iskra_am550_5s_raw_frame,
+      1,
+      {},
+      {{"1.0.1.7.0.255", 3513.0f}},
+      [obis, register_guards](dlms_parser::DlmsParser& p) {
+        register_guards(p);
+        p.register_pattern("value #18, @2, TV", "#18, @2, TV", 10, obis);
+      }
+    );
+  }
+
   SUBCASE("Norway HAN 1-phase (Aidon)") {
     run_meter_test(
       dlms::test_data::norway_han_1phase_raw_frame,

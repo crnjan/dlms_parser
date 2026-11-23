@@ -63,8 +63,10 @@ Slovenian Iskra AM550 pushes a flat 18-element STRUCTURE; element 2 is active po
 parser.register_pattern("AM550 P+", "#18, @2, TV", 0, dlms_parser::ObisId(1, 0, 1, 7, 0, 255));
 parser.register_pattern("AM550 ID", "#18, @0, TSTR", 0, dlms_parser::ObisId(0, 0, 42, 0, 0, 255));
 ```
-Invalid `@`/`#` arguments (no digits, non-digits, > 255) are ignored like unknown tokens.
-`@n`/`#n` apply to the sequence being scanned (top level only); inside `S(...)` they are ignored with a warning.
+An invalid `@`/`#` argument, or `@`/`#` inside `S(...)`, rejects the whole pattern (logged as a warning).
+Guards apply to the sequence currently being scanned, including nested ones the parser descends into; `#n` narrows but does not make a pattern unique
+(a nested sequence of the same size also matches).
+Usable ranges: `#n` 1..127 and `@n` 0..126 (A-XDR short-form element count).
 
 Common examples:
 
@@ -83,8 +85,8 @@ parser.register_pattern("TOW, TV, TSU");          // Landis+Gyr swapped OBIS
 | `SelfDesc`     | array of value descriptions followed by values | definitions array + values      |
 | `F`            | first element guard                            | position check only             |
 | `L`            | last element guard                             | position check only             |
-| `@n`           | element index guard, 0-based (`n` = 0..255)    | position check only             |
-| `#n`           | element count guard (`n` = 0..255)             | position check only             |
+| `@n`           | element index guard, 0-based (`n` = 0..126)    | position check only             |
+| `#n`           | element count guard (`n` = 1..127)             | position check only             |
 | `C`            | class ID, 2-byte uint16 without tag            | `00 03`                         |
 | `TC`           | tagged class ID                                | `12 00 03`                      |
 | `O`            | OBIS code, 6-byte octet string without tag     | `01 00 01 08 00 FF`             |

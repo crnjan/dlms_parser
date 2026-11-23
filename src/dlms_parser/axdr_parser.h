@@ -97,7 +97,8 @@ private:
   // Pattern registry
   std::array<AxdrDescriptorPattern, MAX_PATTERNS> patterns_;
   size_t patterns_count_{ 0 };
-  AxdrDescriptorPattern& register_pattern_dsl_(const char* name, std::string_view dsl, int priority);
+  // Returns nullptr if the pattern was rejected (invalid DSL or registry full)
+  AxdrDescriptorPattern* register_pattern_dsl_(const char* name, std::string_view dsl, int priority);
 
   // Parse-time state — reset at the start of each parse() call
   std::span<const uint8_t> buffer_{};

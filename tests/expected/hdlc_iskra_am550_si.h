@@ -29,7 +29,7 @@ namespace dlms::test_data {
 //   7 33 -> 1.0.2.8.0.255          8 17 -> 1.0.2.8.1.255          9 16 -> 1.0.2.8.2.255
 //  10 19620794 -> 1.0.3.8.0.255   11 11234771 -> 1.0.4.8.0.255
 //
-// Pattern list (see iskra_am550_setup in tests/test_meter_dumps.cpp):
+// Pattern list (see am550_setup in tests/test_meter_dumps.cpp):
 //   5 s:   "#18, @<i>, TSTR" for i=0,1;  "#18, @<i>, TV" for i=2..17  (default_obis = table above)
 //   15 min: "#12, @<i>, TSTR" for i=0;   "#12, @<i>, TV" for i=4..11
 // Float values: 60896257 and 11234771 are not exact in float32; compared with doctest::Approx.

@@ -138,10 +138,11 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Comprehensive Token
 TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Element Index @n and Element Count #n") {
   AxdrParser parser([](const auto&) {});
 
-  SUBCASE("Valid @n and #n, including bounds 0 and 255") {
+  SUBCASE("Valid @n and #n, including range bounds #1, @0 and #127, @126") {
     parser.register_pattern("pos", "#18, @0, TSTR", 10);
-    parser.register_pattern("max", "#255, @255, TV", 20);
-    REQUIRE(parser.patterns().size() == 2);
+    parser.register_pattern("max", "#127, @126, TV", 20);
+    parser.register_pattern("min", "#1, @0, TV", 30);
+    REQUIRE(parser.patterns().size() == 3);
 
     const auto& pos = parser.patterns()[0];
     CHECK(pos.steps[0].type == AxdrTokenType::EXPECT_ELEMENT_COUNT);
@@ -153,62 +154,66 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Element Index @n an
 
     const auto& max = parser.patterns()[1];
     CHECK(max.steps[0].type == AxdrTokenType::EXPECT_ELEMENT_COUNT);
-    CHECK(max.steps[0].param_u8_a == 255);
+    CHECK(max.steps[0].param_u8_a == 127);
     CHECK(max.steps[1].type == AxdrTokenType::EXPECT_ELEMENT_INDEX);
-    CHECK(max.steps[1].param_u8_a == 255);
+    CHECK(max.steps[1].param_u8_a == 126);
+
+    const auto& min = parser.patterns()[2];
+    CHECK(min.steps[0].type == AxdrTokenType::EXPECT_ELEMENT_COUNT);
+    CHECK(min.steps[0].param_u8_a == 1);
+    CHECK(min.steps[1].type == AxdrTokenType::EXPECT_ELEMENT_INDEX);
+    CHECK(min.steps[1].param_u8_a == 0);
   }
 
-  SUBCASE("Invalid @ and # parameters are ignored like unknown tokens") {
-    parser.register_pattern("invalid", "F, @, @x, #, #256, @-1, #1x, C, L", 10);
-    REQUIRE(parser.patterns().size() == 1);
-    const auto& pat = parser.patterns()[0];
-
-    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_TO_BE_FIRST);
-    CHECK(pat.steps[1].type == AxdrTokenType::EXPECT_CLASS_ID_UNTAGGED);
-    CHECK(pat.steps[2].type == AxdrTokenType::EXPECT_TO_BE_LAST);
-    CHECK(pat.steps[3].type == AxdrTokenType::END_OF_PATTERN);
+  SUBCASE("Out of range @n (>126) and #n (0 or >127) reject the pattern") {
+    for (const char* dsl : { "#0, V", "#128, V", "@127, V", "#255, V", "@255, V" }) {
+      INFO("dsl: ", dsl);
+      parser.register_pattern("out_of_range", dsl, 10);
+      CHECK(parser.patterns().size() == 0);
+    }
+    CHECK(contains("invalid positional token '#0'"));
+    CHECK(contains("invalid positional token '#128'"));
+    CHECK(contains("invalid positional token '@127'"));
+    CHECK(contains("invalid positional token '#255'"));
+    CHECK(contains("invalid positional token '@255'"));
   }
 
-  SUBCASE("Out of range index 256 is ignored") {
+  SUBCASE("Invalid @ and # parameters reject the pattern") {
+    for (const char* dsl : { "F, @, C", "F, @x, C", "F, #, C", "F, #256, C", "F, @-1, C", "F, #1x, C", "F, @1O, C" }) {
+      INFO("dsl: ", dsl);
+      parser.register_pattern("invalid", dsl, 10);
+      CHECK(parser.patterns().size() == 0);
+    }
+    CHECK(contains("invalid positional token"));
+  }
+
+  SUBCASE("Out of range index 256 rejects the pattern") {
     parser.register_pattern("too_big", "@256, V", 10);
-    const auto& pat = parser.patterns()[0];
-
-    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
-    CHECK(pat.steps[1].type == AxdrTokenType::END_OF_PATTERN);
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("invalid positional token '@256'"));
   }
 
-  SUBCASE("Huge arguments that would wrap 32/64-bit unsigned are ignored, not taken as @0") {
+  SUBCASE("Huge arguments that would wrap 32/64-bit unsigned reject the pattern, not taken as @0") {
     // 4294967296 = 2^32, 18446744073709551616 = 2^64: naive value * 10 accumulation wraps to 0
-    parser.register_pattern("wrap", "@4294967296, #18446744073709551616, V", 10);
-    const auto& pat = parser.patterns()[0];
-
-    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
-    CHECK(pat.steps[1].type == AxdrTokenType::END_OF_PATTERN);
+    parser.register_pattern("wrap_32", "@4294967296, V", 10);
+    parser.register_pattern("wrap_64", "#18446744073709551616, V", 10);
+    CHECK(parser.patterns().size() == 0);
   }
 
-  SUBCASE("Element tokens inside S(...) are rejected") {
+  SUBCASE("Element tokens inside S(...) reject the pattern") {
     parser.register_pattern("struct_pos", "S(@1, TV)", 10);
-    const auto& pat = parser.patterns()[0];
-
-    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_STRUCTURE_N);
-    CHECK(pat.steps[0].param_u8_a == 1);
-    CHECK(pat.steps[1].type == AxdrTokenType::GOING_DOWN);
-    CHECK(pat.steps[2].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
-    CHECK(pat.steps[3].type == AxdrTokenType::GOING_UP);
-    CHECK(pat.steps[4].type == AxdrTokenType::END_OF_PATTERN);
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("not allowed inside S(...) - pattern rejected"));
   }
 
-  SUBCASE("Count token inside S(...) is rejected") {
+  SUBCASE("Count token inside S(...) rejects the pattern") {
     parser.register_pattern("struct_cnt", "S(#2, TO, TV)", 10);
-    const auto& pat = parser.patterns()[0];
+    CHECK(parser.patterns().size() == 0);
+  }
 
-    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_STRUCTURE_N);
-    CHECK(pat.steps[0].param_u8_a == 2);
-    CHECK(pat.steps[1].type == AxdrTokenType::GOING_DOWN);
-    CHECK(pat.steps[2].type == AxdrTokenType::EXPECT_OBIS6_TAGGED);
-    CHECK(pat.steps[3].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
-    CHECK(pat.steps[4].type == AxdrTokenType::GOING_UP);
-    CHECK(pat.steps[5].type == AxdrTokenType::END_OF_PATTERN);
+  SUBCASE("Lone element index inside S(...) rejects the pattern") {
+    parser.register_pattern("struct_lone", "S(@1)", 10);
+    CHECK(parser.patterns().size() == 0);
   }
 }
 
@@ -343,8 +348,10 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Limits and Edge Cas
     }
     // Hard limit is MAX_PATTERNS = 64
     CHECK(parser.patterns().size() == 64);
-    // Since priority was 'i', 0-63 got inserted. The others gracefully overwrote the end
-    // or were rejected, keeping the system stable without out-of-bounds writes.
+    // Priorities ascend, so 0-63 fill the registry and 64-69 sort after the last entry: each is
+    // rejected with a "not registered" warning, keeping the system stable without out-of-bounds writes.
+    CHECK(parser.patterns().back().priority == 63);
+    CHECK(contains("registry full (64): 'spam' not registered"));
   }
 
   SUBCASE("High Priority Insertion When Full") {
@@ -363,33 +370,58 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Limits and Edge Cas
     CHECK(parser.patterns()[0].steps[0].type == AxdrTokenType::EXPECT_TO_BE_FIRST);
   }
 
+  SUBCASE("Full registry: lower-priority pattern is not registered and does not overwrite the last") {
+    for (uint8_t i = 0; i < 64; i++) {
+      parser.register_pattern("filler", "V", 10, ObisId(0, 0, 1, 0, 0, i));
+    }
+    REQUIRE(parser.patterns().size() == 64);
+    const ObisId last_obis = parser.patterns().back().default_obis;
+
+    parser.register_pattern("late", "F", 20, ObisId(1, 2, 3, 4, 5, 6));
+    CHECK(parser.patterns().size() == 64);
+    CHECK(parser.patterns().back().default_obis == last_obis);
+    CHECK(std::string_view(parser.patterns().back().name) == "filler");
+    CHECK(contains("registry full (64): 'late' not registered"));
+  }
+
+  SUBCASE("Full registry: displaced pattern is named in the warning") {
+    for (int i = 0; i < 64; i++) {
+      parser.register_pattern("filler", "V", 10);
+    }
+    parser.register_pattern("high_prio", "F", 1);
+    CHECK(contains("'high_prio' displaces 'filler'"));
+  }
+
   SUBCASE("Max Tokens Limit (64)") {
     std::string huge_dsl;
     for (int i = 0; i < 70; i++) {
       huge_dsl += "V,";
     }
     parser.register_pattern("huge", huge_dsl.c_str(), 10);
-    const auto& pat = parser.patterns()[0];
 
-    // The parser only extracts the first 64 tokens. Note that each "V" adds 1 step.
-    // However, steps are ALSO limited to 32. So we check step_count capping next.
-    // But this test ensures no crash parsing the string itself.
-    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
+    // The parser only extracts the first 64 tokens, i.e. 64 steps, which exceeds the 32-step limit:
+    // the pattern is rejected. This test ensures no crash parsing the string itself.
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("more than 32 steps"));
   }
 
-  SUBCASE("Max Steps Limit (32)") {
+  SUBCASE("Max Steps Limit (32): exactly 32 steps is accepted") {
     std::string many_steps_dsl;
-    for (int i = 0; i < 50; i++) {
+    for (int i = 0; i < 32; i++) {
       many_steps_dsl += "V,";
     }
     parser.register_pattern("many_steps", many_steps_dsl.c_str(), 10);
+    REQUIRE(parser.patterns().size() == 1);
     const auto& pat = parser.patterns()[0];
 
-    // Should successfully cap at 32 steps.
-    // Step 31 is the last written step. The 32nd byte doesn't exist to be checked safely
-    // without knowing implementation bounds, but we can verify it doesn't crash
-    // and correctly processes up to the limit.
     CHECK(pat.steps[31].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
+  }
+
+  SUBCASE("More than 32 steps rejects the pattern (TSU expands to 5 steps)") {
+    // 7 x TSU = 35 steps, then #18 would be the 36th
+    parser.register_pattern("too_many_steps", "TSU,TSU,TSU,TSU,TSU,TSU,TSU,#18", 10);
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("Pattern 'too_many_steps': more than 32 steps - pattern rejected"));
   }
 
   SUBCASE("Max Inner Tokens Limit (16)") {
