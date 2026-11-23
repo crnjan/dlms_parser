@@ -64,6 +64,7 @@ parser.register_pattern("AM550 P+", "#18, @2, TV", 0, dlms_parser::ObisId(1, 0, 
 parser.register_pattern("AM550 ID", "#18, @0, TSTR", 0, dlms_parser::ObisId(0, 0, 42, 0, 0, 255));
 ```
 Invalid `@`/`#` arguments (no digits, non-digits, > 255) are ignored like unknown tokens.
+`@n`/`#n` apply to the sequence being scanned (top level only); inside `S(...)` they are ignored with a warning.
 
 Common examples:
 

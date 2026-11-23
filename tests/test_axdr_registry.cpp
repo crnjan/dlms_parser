@@ -177,16 +177,38 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Element Index @n an
     CHECK(pat.steps[1].type == AxdrTokenType::END_OF_PATTERN);
   }
 
-  SUBCASE("Element tokens inside S(...)") {
+  SUBCASE("Huge arguments that would wrap 32/64-bit unsigned are ignored, not taken as @0") {
+    // 4294967296 = 2^32, 18446744073709551616 = 2^64: naive value * 10 accumulation wraps to 0
+    parser.register_pattern("wrap", "@4294967296, #18446744073709551616, V", 10);
+    const auto& pat = parser.patterns()[0];
+
+    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
+    CHECK(pat.steps[1].type == AxdrTokenType::END_OF_PATTERN);
+  }
+
+  SUBCASE("Element tokens inside S(...) are rejected") {
     parser.register_pattern("struct_pos", "S(@1, TV)", 10);
     const auto& pat = parser.patterns()[0];
 
     CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_STRUCTURE_N);
+    CHECK(pat.steps[0].param_u8_a == 1);
     CHECK(pat.steps[1].type == AxdrTokenType::GOING_DOWN);
-    CHECK(pat.steps[2].type == AxdrTokenType::EXPECT_ELEMENT_INDEX);
-    CHECK(pat.steps[2].param_u8_a == 1);
+    CHECK(pat.steps[2].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
+    CHECK(pat.steps[3].type == AxdrTokenType::GOING_UP);
+    CHECK(pat.steps[4].type == AxdrTokenType::END_OF_PATTERN);
+  }
+
+  SUBCASE("Count token inside S(...) is rejected") {
+    parser.register_pattern("struct_cnt", "S(#2, TO, TV)", 10);
+    const auto& pat = parser.patterns()[0];
+
+    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_STRUCTURE_N);
+    CHECK(pat.steps[0].param_u8_a == 2);
+    CHECK(pat.steps[1].type == AxdrTokenType::GOING_DOWN);
+    CHECK(pat.steps[2].type == AxdrTokenType::EXPECT_OBIS6_TAGGED);
     CHECK(pat.steps[3].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
     CHECK(pat.steps[4].type == AxdrTokenType::GOING_UP);
+    CHECK(pat.steps[5].type == AxdrTokenType::END_OF_PATTERN);
   }
 }
 

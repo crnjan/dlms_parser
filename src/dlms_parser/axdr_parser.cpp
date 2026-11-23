@@ -736,12 +736,24 @@ AxdrDescriptorPattern& AxdrParser::register_pattern_dsl_(const char* name, const
           if (!t.empty() && inner_count < 16) inner_tokens[inner_count++] = t;
         }
 
-        if (inner_count > 0) {
-          add_step(AxdrTokenType::EXPECT_STRUCTURE_N, static_cast<uint8_t>(inner_count));
+        // Positional tokens (@n, #n) compare against the outer sequence, so they are rejected inside S(...)
+        size_t element_count = 0;
+        for (size_t j = 0; j < inner_count; ++j) {
+          if (!inner_tokens[j].starts_with('@') && !inner_tokens[j].starts_with('#')) element_count++;
+        }
+
+        if (element_count > 0) {
+          add_step(AxdrTokenType::EXPECT_STRUCTURE_N, static_cast<uint8_t>(element_count));
           add_step(AxdrTokenType::GOING_DOWN);
           // Process inner tokens sequentially onto the steps array without shifting future tokens
           for (size_t j = 0; j < inner_count; ++j) {
-            process_simple_token(inner_tokens[j]);
+            const std::string_view t = inner_tokens[j];
+            if (t.starts_with('@') || t.starts_with('#')) {
+              Logger::log(LogLevel::WARNING, "Pattern '%s': positional token '%.*s' not allowed inside S(...) - ignored",
+                          name ? name : "", static_cast<int>(t.size()), t.data());
+              continue;
+            }
+            process_simple_token(t);
           }
           add_step(AxdrTokenType::GOING_UP);
         }
