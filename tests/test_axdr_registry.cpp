@@ -215,6 +215,61 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Element Index @n an
     parser.register_pattern("struct_lone", "S(@1)", 10);
     CHECK(parser.patterns().size() == 0);
   }
+
+  SUBCASE("More than 64 top-level tokens reject the pattern, not silently dropped") {
+    std::string dsl = "TV";
+    for (int i = 0; i < 64; i++) dsl += ", X";
+    dsl += ", #18";
+    parser.register_pattern("too_many_tokens", dsl.c_str(), 10);
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("Pattern 'too_many_tokens': more than 64 tokens - pattern rejected"));
+  }
+
+  SUBCASE("More than 16 inner tokens inside S(...) reject the pattern") {
+    std::string dsl = "TV, S(";
+    for (int i = 0; i < 17; i++) dsl += (i ? ", TV" : "TV");
+    dsl += ")";
+    parser.register_pattern("struct_overflow", dsl.c_str(), 10);
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("Pattern 'struct_overflow': more than 16 tokens inside S(...) - pattern rejected"));
+  }
+
+  SUBCASE("Exactly 16 inner tokens inside S(...) are accepted") {
+    std::string dsl = "TV, S(";
+    for (int i = 0; i < 16; i++) dsl += (i ? ", TV" : "TV");
+    dsl += ")";
+    parser.register_pattern("struct_exact", dsl.c_str(), 10);
+    REQUIRE(parser.patterns().size() == 1);
+    const auto& pat = parser.patterns()[0];
+    CHECK(pat.steps[1].type == AxdrTokenType::EXPECT_STRUCTURE_N);
+    CHECK(pat.steps[1].param_u8_a == 16);
+  }
+
+  SUBCASE("Positional token as 16th inner token of S(...) rejects the pattern") {
+    std::string dsl = "TV, S(";
+    for (int i = 0; i < 15; i++) dsl += "TV, ";
+    dsl += "@1)";
+    parser.register_pattern("struct_pos16", dsl.c_str(), 10);
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("not allowed inside S(...) - pattern rejected"));
+  }
+
+  SUBCASE("Positional token inside DN/UP rejects the pattern") {
+    parser.register_pattern("dn_pos", "DN, @1, UP, TV", 10);
+    parser.register_pattern("dn_cnt", "DN, #2, UP, TV", 10);
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("Pattern 'dn_pos': positional token '@1' not allowed inside DN/UP - pattern rejected"));
+  }
+
+  SUBCASE("Positional token after returning to depth 0 is accepted") {
+    parser.register_pattern("dn_ok", "DN, TV, UP, @1, TV", 10);
+    REQUIRE(parser.patterns().size() == 1);
+    const auto& pat = parser.patterns()[0];
+    CHECK(pat.steps[0].type == AxdrTokenType::GOING_DOWN);
+    CHECK(pat.steps[2].type == AxdrTokenType::GOING_UP);
+    CHECK(pat.steps[3].type == AxdrTokenType::EXPECT_ELEMENT_INDEX);
+    CHECK(pat.steps[4].type == AxdrTokenType::EXPECT_VALUE_GENERIC);
+  }
 }
 
 TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Structure Expansion S(...)") {
@@ -399,10 +454,9 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Limits and Edge Cas
     }
     parser.register_pattern("huge", huge_dsl.c_str(), 10);
 
-    // The parser only extracts the first 64 tokens, i.e. 64 steps, which exceeds the 32-step limit:
-    // the pattern is rejected. This test ensures no crash parsing the string itself.
+    // 70 tokens exceed the 64-token limit: the pattern is rejected. This test ensures no crash parsing the string itself.
     CHECK(parser.patterns().size() == 0);
-    CHECK(contains("more than 32 steps"));
+    CHECK(contains("Pattern 'huge': more than 64 tokens - pattern rejected"));
   }
 
   SUBCASE("Max Steps Limit (32): exactly 32 steps is accepted") {
@@ -434,10 +488,9 @@ TEST_CASE_FIXTURE(LogFixture, "AxdrParser Pattern Registry - Limits and Edge Cas
     huge_struct += ")";
 
     parser.register_pattern("huge_struct", huge_struct.c_str(), 10);
-    const auto& pat = parser.patterns()[0];
 
-    CHECK(pat.steps[0].type == AxdrTokenType::EXPECT_STRUCTURE_N);
-    // It should have capped the structure size param to 16
-    CHECK(pat.steps[0].param_u8_a == 16);
+    // 20 inner tokens are rejected, not silently truncated to 16
+    CHECK(parser.patterns().size() == 0);
+    CHECK(contains("Pattern 'huge_struct': more than 16 tokens inside S(...) - pattern rejected"));
   }
 }

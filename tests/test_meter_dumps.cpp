@@ -286,7 +286,7 @@ TEST_CASE_FIXTURE(LogFixture, "Integration: HDLC") {
     const auto register_guards = [obis](dlms_parser::DlmsParser& p) {
       p.register_pattern("empty S(@1)", "S(@1)", 10, obis);
       p.register_pattern("empty S()", "S()", 10, obis);
-      p.register_pattern("guard f, c, l", "f, c, l", 10, obis);
+      p.register_pattern("guard F, L", "F, L", 10, obis);
       p.register_pattern("guard #18, @2", "#18, @2", 10, obis);
       p.register_pattern("guard F", "F", 10, obis);
     };

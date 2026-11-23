@@ -637,17 +637,28 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
   size_t start = 0;
   int paren = 0;
 
+  // Stores a non-empty token; one past the array size rejects the whole pattern (dropping tokens would widen it)
+  auto add_token = [&](const std::string_view t) {
+    if (t.empty()) return;
+    if (tokens_count < std::size(tokens)) {
+      tokens[tokens_count++] = t;
+    } else if (!invalid) {
+      Logger::log(LogLevel::WARNING, "Pattern '%s': more than %zu tokens - pattern rejected", name ? name : "", std::size(tokens));
+      invalid = true;
+    }
+  };
+
   // Split the DSL string_view by comma, ignoring commas inside parentheses
   for (size_t i = 0; i < dsl.length(); ++i) {
     if (dsl[i] == '(') { paren++; }
     else if (dsl[i] == ')') { paren--; }
     else if (dsl[i] == ',' && paren == 0) {
-      if (tokens_count < 64) tokens[tokens_count++] = trim(dsl.substr(start, i - start));
+      add_token(trim(dsl.substr(start, i - start)));
       start = i + 1;
     }
   }
-  if (start < dsl.length() && tokens_count < 64) {
-    tokens[tokens_count++] = trim(dsl.substr(start));
+  if (start < dsl.length()) {
+    add_token(trim(dsl.substr(start)));
   }
 
   // Adds a step; a step past the array size rejects the whole pattern (logged once, on the transition to invalid)
@@ -726,9 +737,11 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
     else if (tok == "UP") add_step(AxdrTokenType::GOING_UP);
   };
 
+  // Nesting depth of DN/UP at top level: @n/#n test the outer sequence, so they are not allowed while depth > 0
+  int depth = 0;
+
   for (size_t i = 0; i < tokens_count; i++) {
     std::string_view tok = tokens[i];
-    if (tok.empty()) continue;
 
     if (tok.starts_with("S(")) {
       const size_t l = tok.find('(');
@@ -739,16 +752,26 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
         size_t inner_count = 0;
         size_t in_start = 0;
 
+        // Stores a non-empty inner token; one past the array size rejects the whole pattern
+        auto add_inner = [&](const std::string_view t) {
+          if (t.empty()) return;
+          if (inner_count < std::size(inner_tokens)) {
+            inner_tokens[inner_count++] = t;
+          } else if (!invalid) {
+            Logger::log(LogLevel::WARNING, "Pattern '%s': more than %zu tokens inside S(...) - pattern rejected",
+                        name ? name : "", std::size(inner_tokens));
+            invalid = true;
+          }
+        };
+
         for (size_t j = 0; j < inner.length(); ++j) {
           if (inner[j] == ',') {
-            std::string_view t = trim(inner.substr(in_start, j - in_start));
-            if (!t.empty() && inner_count < 16) inner_tokens[inner_count++] = t;
+            add_inner(trim(inner.substr(in_start, j - in_start)));
             in_start = j + 1;
           }
         }
         if (in_start < inner.length()) {
-          std::string_view t = trim(inner.substr(in_start));
-          if (!t.empty() && inner_count < 16) inner_tokens[inner_count++] = t;
+          add_inner(trim(inner.substr(in_start)));
         }
 
         if (inner_count > 0) {
@@ -770,7 +793,16 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
         }
       }
     } else {
-      process_simple_token(tok);
+      const bool positional = tok.starts_with('@') || tok.starts_with('#');
+      if (positional && depth > 0) {
+        Logger::log(LogLevel::WARNING, "Pattern '%s': positional token '%.*s' not allowed inside DN/UP - pattern rejected",
+                    name ? name : "", static_cast<int>(tok.size()), tok.data());
+        invalid = true;
+      } else {
+        process_simple_token(tok);
+      }
+      if (tok == "DN") depth++;
+      else if (tok == "UP" && depth > 0) depth--;
     }
   }
 
