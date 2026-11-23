@@ -107,4 +107,4 @@
 
 | Meter | Note |
 |-------|------|
-| iskra_am550_si | OBIS implied by element index (`#18, @n` patterns), see `tests/expected/hdlc_iskra_am550_si.h` |
+| iskra_am550_si | OBIS implied by element index (`CNT(18), IDX(n)` patterns), see `tests/expected/hdlc_iskra_am550_si.h` |

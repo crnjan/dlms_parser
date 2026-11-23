@@ -9,8 +9,8 @@ namespace dlms::test_data {
 
 // Iskra AM550 (Slovenia) - single HDLC frame carrying a DATA-NOTIFICATION with a flat
 // STRUCTURE of values WITHOUT OBIS codes (positional). The OBIS code of each value is
-// implied only by its element index, so the patterns use the @n (element index) and
-// #n (element count) tokens. Identity values are anonymised (ISK1030799999999, ISK99999999).
+// implied only by its element index, so the patterns use the IDX(n) (element index) and
+// CNT(n) (element count) tokens. Identity values are anonymised (ISK1030799999999, ISK99999999).
 // Sources: tests/dumps/hdlc_iskra_am550_si_5s.log, tests/dumps/hdlc_iskra_am550_si_15min.log
 //
 // 5 s telegram: STRUCTURE(18), element index -> OBIS (scaler not sent, raw values):
@@ -30,8 +30,8 @@ namespace dlms::test_data {
 //  10 19620794 -> 1.0.3.8.0.255   11 11234771 -> 1.0.4.8.0.255
 //
 // Pattern list (see am550_setup in tests/test_meter_dumps.cpp):
-//   5 s:   "#18, @<i>, TSTR" for i=0,1;  "#18, @<i>, TV" for i=2..17  (default_obis = table above)
-//   15 min: "#12, @<i>, TSTR" for i=0;   "#12, @<i>, TV" for i=4..11
+//   5 s:   "CNT(18), IDX(<i>), TSTR" for i=0,1;  "CNT(18), IDX(<i>), TV" for i=2..17  (default_obis = table above)
+//   15 min: "CNT(12), IDX(<i>), TSTR" for i=0;   "CNT(12), IDX(<i>), TV" for i=4..11
 // Float values: 60896257 and 11234771 are not exact in float32; compared with doctest::Approx.
 
 // 5 s telegram, single HDLC frame (134 bytes)

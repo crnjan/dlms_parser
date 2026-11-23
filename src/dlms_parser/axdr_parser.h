@@ -27,8 +27,8 @@ enum class AxdrTokenType : uint8_t {
   EXPECT_STRUCTURE_N,
   EXPECT_SCALER_TAGGED,
   EXPECT_UNIT_ENUM_TAGGED,
-  EXPECT_ELEMENT_INDEX,  // @n: element index within container == param_u8_a
-  EXPECT_ELEMENT_COUNT,  // #n: container element count == param_u8_a
+  EXPECT_ELEMENT_INDEX,  // IDX(n): element index within container == param_u8_a
+  EXPECT_ELEMENT_COUNT,  // CNT(n): container element count == param_u8_a
   SELF_DESC,
   GOING_DOWN,
   GOING_UP,
