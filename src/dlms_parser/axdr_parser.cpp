@@ -569,6 +569,12 @@ bool AxdrParser::match_pattern_(const DlmsDataType container_type, const uint8_t
         cap.has_scaler_unit = true;
         consume_one();
         break;
+      case AxdrTokenType::EXPECT_ELEMENT_INDEX:
+        if (elem_idx != param_u8_a) return false;
+        break;
+      case AxdrTokenType::EXPECT_ELEMENT_COUNT:
+        if (elem_count != param_u8_a) return false;
+        break;
       case AxdrTokenType::SELF_DESC: {
         return this->parse_self_describing_(container_type, elem_idx, elem_count, pat, consumed);
       }
@@ -645,8 +651,28 @@ AxdrDescriptorPattern& AxdrParser::register_pattern_dsl_(const char* name, const
     }
   };
 
+  // Parses the decimal digits after '@' or '#' (0..255). Returns false on empty, non-digit or overflow.
+  auto parse_u8_param = [](const std::string_view digits, uint8_t& out) {
+    if (digits.empty()) return false;
+    unsigned value = 0;
+    for (const char c : digits) {
+      if (c < '0' || c > '9') return false;
+      value = value * 10 + static_cast<unsigned>(c - '0');
+      if (value > 255) return false;
+    }
+    out = static_cast<uint8_t>(value);
+    return true;
+  };
+
   auto process_simple_token = [&](const std::string_view tok) {
-    if      (tok == "SelfDesc") add_step(AxdrTokenType::SELF_DESC);
+    // @n / #n: invalid parameters are ignored, like unknown tokens.
+    if (tok.starts_with('@') || tok.starts_with('#')) {
+      uint8_t n = 0;
+      if (parse_u8_param(tok.substr(1), n)) {
+        add_step(tok[0] == '@' ? AxdrTokenType::EXPECT_ELEMENT_INDEX : AxdrTokenType::EXPECT_ELEMENT_COUNT, n);
+      }
+    }
+    else if (tok == "SelfDesc") add_step(AxdrTokenType::SELF_DESC);
     else if (tok == "F")  add_step(AxdrTokenType::EXPECT_TO_BE_FIRST);
     else if (tok == "L")  add_step(AxdrTokenType::EXPECT_TO_BE_LAST);
     else if (tok == "C")  add_step(AxdrTokenType::EXPECT_CLASS_ID_UNTAGGED);

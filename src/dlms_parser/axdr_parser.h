@@ -27,6 +27,8 @@ enum class AxdrTokenType : uint8_t {
   EXPECT_STRUCTURE_N,
   EXPECT_SCALER_TAGGED,
   EXPECT_UNIT_ENUM_TAGGED,
+  EXPECT_ELEMENT_INDEX,  // @n: element index within container == param_u8_a
+  EXPECT_ELEMENT_COUNT,  // #n: container element count == param_u8_a
   SELF_DESC,
   GOING_DOWN,
   GOING_UP,
@@ -90,7 +92,7 @@ public:
   [[nodiscard]] std::span<const AxdrDescriptorPattern> patterns() const { return { patterns_.data(), patterns_count_ }; }
 
 private:
-  static constexpr size_t MAX_PATTERNS = 32;
+  static constexpr size_t MAX_PATTERNS = 64;
 
   // Pattern registry
   std::array<AxdrDescriptorPattern, MAX_PATTERNS> patterns_;

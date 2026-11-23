@@ -57,6 +57,14 @@ Pattern priority matters:
 - `register_pattern(dsl)` uses priority `0`
 - built-ins start at priority `10`
 
+Positional structures (no OBIS in the data) are matched by element index `@n` and element count `#n`.
+Slovenian Iskra AM550 pushes a flat 18-element STRUCTURE; element 2 is active power+ (`1.0.1.7.0.255`):
+```c++
+parser.register_pattern("AM550 P+", "#18, @2, TV", 0, dlms_parser::ObisId(1, 0, 1, 7, 0, 255));
+parser.register_pattern("AM550 ID", "#18, @0, TSTR", 0, dlms_parser::ObisId(0, 0, 42, 0, 0, 255));
+```
+Invalid `@`/`#` arguments (no digits, non-digits, > 255) are ignored like unknown tokens.
+
 Common examples:
 
 ```cpp
@@ -74,6 +82,8 @@ parser.register_pattern("TOW, TV, TSU");          // Landis+Gyr swapped OBIS
 | `SelfDesc`     | array of value descriptions followed by values | definitions array + values      |
 | `F`            | first element guard                            | position check only             |
 | `L`            | last element guard                             | position check only             |
+| `@n`           | element index guard, 0-based (`n` = 0..255)    | position check only             |
+| `#n`           | element count guard (`n` = 0..255)             | position check only             |
 | `C`            | class ID, 2-byte uint16 without tag            | `00 03`                         |
 | `TC`           | tagged class ID                                | `12 00 03`                      |
 | `O`            | OBIS code, 6-byte octet string without tag     | `01 00 01 08 00 FF`             |
