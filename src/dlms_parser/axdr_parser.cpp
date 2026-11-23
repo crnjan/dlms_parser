@@ -5,7 +5,6 @@
 #include <cstdio>
 #include <cstring>
 #include <algorithm>
-#include <iterator>
 #include <utility>
 
 namespace dlms_parser {
@@ -621,8 +620,7 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
   // Fill step array with the sentinel value since we don't track step count directly
   std::ranges::fill(pat.steps, AxdrPatternStep{AxdrTokenType::END_OF_PATTERN});
   size_t step_count = 0;
-  // Set on invalid IDX(n)/CNT(n) usage or an unknown token with parentheses: the whole pattern is rejected,
-  // since dropping a guard would widen it
+  // Set on invalid IDX(n)/CNT(n) usage: the whole pattern is rejected, since dropping a guard would widen it
   bool invalid = false;
 
   // Helper lambda to trim string_view bounds instead of creating new substrings
@@ -638,46 +636,28 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
   size_t start = 0;
   int paren = 0;
 
-  // Stores a non-empty token; one past the array size rejects the whole pattern (dropping tokens would widen it)
-  auto add_token = [&](const std::string_view t) {
-    if (t.empty()) return;
-    if (tokens_count < std::size(tokens)) {
-      tokens[tokens_count++] = t;
-    } else if (!invalid) {
-      Logger::log(LogLevel::WARNING, "Pattern '%s': more than %zu tokens - pattern rejected", name ? name : "", std::size(tokens));
-      invalid = true;
-    }
-  };
-
   // Split the DSL string_view by comma, ignoring commas inside parentheses
   for (size_t i = 0; i < dsl.length(); ++i) {
     if (dsl[i] == '(') { paren++; }
     else if (dsl[i] == ')') { paren--; }
     else if (dsl[i] == ',' && paren == 0) {
-      add_token(trim(dsl.substr(start, i - start)));
+      if (tokens_count < 64) tokens[tokens_count++] = trim(dsl.substr(start, i - start));
       start = i + 1;
     }
   }
-  if (start < dsl.length()) {
-    add_token(trim(dsl.substr(start)));
+  if (start < dsl.length() && tokens_count < 64) {
+    tokens[tokens_count++] = trim(dsl.substr(start));
   }
 
-  // Adds a step; a step past the array size rejects the whole pattern (logged once, on the transition to invalid)
+  // Safely adds a step sequence tracking step counts directly
   auto add_step = [&](const AxdrTokenType type, const uint8_t param = 0) {
-    if (step_count < std::size(pat.steps)) {
+    if (step_count < 32) {
       pat.steps[step_count++] = {type, param};
-    } else if (!invalid) {
-      Logger::log(LogLevel::WARNING, "Pattern '%s': more than %zu steps - pattern rejected", name ? name : "", std::size(pat.steps));
-      invalid = true;
     }
   };
 
   // Positional tokens: IDX(n) element index 0..126, CNT(n) element count 1..127 (A-XDR short-form)
   auto is_positional = [](const std::string_view tok) { return tok.starts_with("IDX(") || tok.starts_with("CNT("); };
-  // Looks positional but is not IDX(...)/CNT(...) ("IDX2", "IDX", "CNT18", "@2", "#18"): rejected, never ignored
-  auto is_near_miss_positional = [](const std::string_view tok) {
-    return tok.starts_with("IDX") || tok.starts_with("CNT") || tok.starts_with('@') || tok.starts_with('#');
-  };
 
   // Parses decimal digits only (0..255). Returns false on empty, non-digit or overflow.
   auto parse_u8_param = [](const std::string_view digits, uint8_t& out) {
@@ -707,11 +687,6 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
                     name ? name : "", static_cast<int>(tok.size()), tok.data());
         invalid = true;
       }
-    }
-    else if (is_near_miss_positional(tok)) {
-      Logger::log(LogLevel::WARNING, "Pattern '%s': invalid positional token '%.*s' - pattern rejected",
-                  name ? name : "", static_cast<int>(tok.size()), tok.data());
-      invalid = true;
     }
     else if (tok == "SelfDesc") add_step(AxdrTokenType::SELF_DESC);
     else if (tok == "F")  add_step(AxdrTokenType::EXPECT_TO_BE_FIRST);
@@ -750,94 +725,53 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
     }
     else if (tok == "DN") add_step(AxdrTokenType::GOING_DOWN);
     else if (tok == "UP") add_step(AxdrTokenType::GOING_UP);
-    // Any other token with parentheses is a typo (e.g. "IXD(2)", "S(TO,TV") and would widen the pattern
-    else if (tok.find_first_of("()") != std::string_view::npos) {
-      Logger::log(LogLevel::WARNING, "Pattern '%s': unknown token '%.*s' - pattern rejected",
-                  name ? name : "", static_cast<int>(tok.size()), tok.data());
-      invalid = true;
-    }
   };
-
-  // Nesting depth of DN/UP at top level: IDX/CNT test the outer sequence, so they are not allowed while depth > 0
-  int depth = 0;
 
   for (size_t i = 0; i < tokens_count; i++) {
     std::string_view tok = tokens[i];
+    if (tok.empty()) continue;
 
-    // "S(" and ")" both present (tok.size() >= 3); a bare "S(" or "S)" falls through and is rejected
-    if (tok.starts_with("S(") && tok.ends_with(')')) {
-      const std::string_view inner = tok.substr(2, tok.size() - 3);
-      std::string_view inner_tokens[16];
-      size_t inner_count = 0;
-      size_t in_start = 0;
+    if (tok.starts_with("S(")) {
+      const size_t l = tok.find('(');
+      const size_t r = tok.rfind(')');
+      if (l != std::string_view::npos && r != std::string_view::npos && r > l + 1) {
+        const std::string_view inner = tok.substr(l + 1, r - l - 1);
+        std::string_view inner_tokens[16];
+        size_t inner_count = 0;
+        size_t in_start = 0;
 
-      // Stores a non-empty inner token; empty ones are ignored, one past the array size rejects the whole pattern
-      auto add_inner = [&](const std::string_view t) {
-        if (t.empty()) return;
-        if (inner_count < std::size(inner_tokens)) {
-          inner_tokens[inner_count++] = t;
-        } else if (!invalid) {
-          Logger::log(LogLevel::WARNING, "Pattern '%s': more than %zu tokens inside S(...) - pattern rejected",
-                      name ? name : "", std::size(inner_tokens));
-          invalid = true;
-        }
-      };
-
-      for (size_t j = 0; j < inner.length(); ++j) {
-        if (inner[j] == ',') {
-          add_inner(trim(inner.substr(in_start, j - in_start)));
-          in_start = j + 1;
-        }
-      }
-      add_inner(trim(inner.substr(in_start)));
-
-      // An empty S(...) would register a structure with no elements
-      if (inner_count == 0) {
-        Logger::log(LogLevel::WARNING, "Pattern '%s': empty S(...) - pattern rejected", name ? name : "");
-        invalid = true;
-      }
-
-      if (inner_count > 0) {
-        add_step(AxdrTokenType::EXPECT_STRUCTURE_N, static_cast<uint8_t>(inner_count));
-        add_step(AxdrTokenType::GOING_DOWN);
-        // Process inner tokens sequentially onto the steps array without shifting future tokens
-        for (size_t j = 0; j < inner_count; ++j) {
-          const std::string_view t = inner_tokens[j];
-          // IDX/CNT compare against the outer sequence, so they are not allowed inside S(...)
-          if (is_positional(t)) {
-            Logger::log(LogLevel::WARNING, "Pattern '%s': positional token '%.*s' not allowed inside S(...) - pattern rejected",
-                        name ? name : "", static_cast<int>(t.size()), t.data());
-            invalid = true;
-            continue;
+        for (size_t j = 0; j < inner.length(); ++j) {
+          if (inner[j] == ',') {
+            std::string_view t = trim(inner.substr(in_start, j - in_start));
+            if (!t.empty() && inner_count < 16) inner_tokens[inner_count++] = t;
+            in_start = j + 1;
           }
-          process_simple_token(t);
         }
-        add_step(AxdrTokenType::GOING_UP);
+        if (in_start < inner.length()) {
+          std::string_view t = trim(inner.substr(in_start));
+          if (!t.empty() && inner_count < 16) inner_tokens[inner_count++] = t;
+        }
+
+        if (inner_count > 0) {
+          add_step(AxdrTokenType::EXPECT_STRUCTURE_N, static_cast<uint8_t>(inner_count));
+          add_step(AxdrTokenType::GOING_DOWN);
+          // Process inner tokens sequentially onto the steps array without shifting future tokens
+          for (size_t j = 0; j < inner_count; ++j) {
+            // IDX/CNT compare against the outer sequence, so they are not allowed inside S(...)
+            if (is_positional(inner_tokens[j])) {
+              Logger::log(LogLevel::WARNING, "Pattern '%s': positional token '%.*s' not allowed inside S(...) - pattern rejected",
+                          name ? name : "", static_cast<int>(inner_tokens[j].size()), inner_tokens[j].data());
+              invalid = true;
+              continue;
+            }
+            process_simple_token(inner_tokens[j]);
+          }
+          add_step(AxdrTokenType::GOING_UP);
+        }
       }
     } else {
-      if (is_positional(tok) && depth > 0) {
-        Logger::log(LogLevel::WARNING, "Pattern '%s': positional token '%.*s' not allowed inside DN/UP - pattern rejected",
-                    name ? name : "", static_cast<int>(tok.size()), tok.data());
-        invalid = true;
-      } else {
-        process_simple_token(tok);
-      }
-      if (tok == "DN") {
-        depth++;
-      } else if (tok == "UP") {
-        if (depth > 0) {
-          depth--;
-        } else {
-          Logger::log(LogLevel::WARNING, "Pattern '%s': UP without DN - pattern rejected", name ? name : "");
-          invalid = true;
-        }
-      }
+      process_simple_token(tok);
     }
-  }
-
-  if (depth > 0) {
-    Logger::log(LogLevel::WARNING, "Pattern '%s': DN without UP - pattern rejected", name ? name : "");
-    invalid = true;
   }
 
   if (invalid) return nullptr;
@@ -848,7 +782,7 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
     insert_pos++;
   }
 
-  // Shift right and insert, maintaining max array bounds
+  // Shift right and insert, maintaining max array bounds bounds
   if (this->patterns_count_ < MAX_PATTERNS) {
     for (size_t j = this->patterns_count_; j > insert_pos; --j) {
       this->patterns_[j] = this->patterns_[j - 1];
@@ -858,19 +792,15 @@ AxdrDescriptorPattern* AxdrParser::register_pattern_dsl_(const char* name, const
     return &this->patterns_[insert_pos];
   }
 
-  // Registry full: the last pattern is displaced if the new one sorts before it, otherwise the new one is dropped
+  // If full, default to end-overwrite safety, although standard usage expects patterns to fit MAX_PATTERNS
   if (insert_pos < MAX_PATTERNS) {
-    Logger::log(LogLevel::WARNING, "Pattern registry full (%zu): '%s' displaces '%s'",
-                MAX_PATTERNS, name ? name : "", this->patterns_[MAX_PATTERNS - 1].name ? this->patterns_[MAX_PATTERNS - 1].name : "");
     for (size_t j = MAX_PATTERNS - 1; j > insert_pos; --j) {
       this->patterns_[j] = this->patterns_[j - 1];
     }
     this->patterns_[insert_pos] = pat;
     return &this->patterns_[insert_pos];
   }
-
-  Logger::log(LogLevel::WARNING, "Pattern registry full (%zu): '%s' not registered", MAX_PATTERNS, name ? name : "");
-  return nullptr;
+  return &this->patterns_[MAX_PATTERNS - 1];
 }
 
 }  // namespace dlms_parser

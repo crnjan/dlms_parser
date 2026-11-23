@@ -63,17 +63,12 @@ Slovenian Iskra AM550 pushes a flat 18-element STRUCTURE; element 2 is active po
 parser.register_pattern("AM550 P+", "CNT(18), IDX(2), TV", 0, dlms_parser::ObisId(1, 0, 1, 7, 0, 255));
 parser.register_pattern("AM550 ID", "CNT(18), IDX(0), TSTR", 0, dlms_parser::ObisId(0, 0, 42, 0, 0, 255));
 ```
-Register a pattern for every element index of a positional telegram (at least up to the last one you need); otherwise a built-in
-multi-element pattern (e.g. `TO, TV`) may match an unregistered element and consume the next one.
-An invalid `IDX()`/`CNT()` argument, a near-miss such as `IDX2`, `IDX 2` or `#18`, or `IDX()`/`CNT()` inside `S(...)` or `DN`/`UP`,
-an empty `S()`, or an unbalanced `DN`/`UP` rejects the whole pattern (logged as a warning).
-Any other token with parentheses (a typo such as `IXD(2)` or `S(TO,TV`) also rejects the pattern;
-only `S(...)`, `IDX(n)` and `CNT(n)` may contain parentheses.
-Guards apply to the sequence currently being scanned, including nested ones the parser descends into;
-`CNT(n)` narrows but does not make a pattern unique (a nested sequence of the same size also matches).
-Usable ranges: `CNT(n)` 1..127 and `IDX(n)` 0..126 (A-XDR short-form element count).
-In YAML block style `IDX(n)` and `CNT(n)` need no quoting, e.g. `pattern: CNT(18), IDX(2), TV`.
-Flow style (`{ ... }`) still needs quotes because of the commas.
+- Register a pattern for every element index of a positional telegram; otherwise a built-in multi-element pattern
+  (e.g. `TO, TV`) may match an unregistered element and consume the next one.
+- `IDX`/`CNT` apply to the sequence being scanned, including nested ones the parser descends into, so combine `IDX` with `CNT`.
+  Inside `S(...)` they are rejected.
+- An invalid argument (e.g. `IDX()`, `IDX(x)`, `CNT(0)`, `IDX(127)`) rejects the whole pattern (logged as a warning).
+- YAML block style needs no quoting: `pattern: CNT(18), IDX(2), TV`. Flow style (`{ ... }`) needs quotes because of the commas.
 
 Common examples:
 

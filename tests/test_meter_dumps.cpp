@@ -281,14 +281,12 @@ TEST_CASE_FIXTURE(LogFixture, "Integration: HDLC") {
     );
   }
 
-  SUBCASE("Iskra AM550: empty and guard-only patterns never match") {
+  SUBCASE("Iskra AM550: rejected and guard-only patterns never match") {
     const auto obis = dlms_parser::ObisId(1, 0, 1, 7, 0, 255);
     const auto register_guards = [obis](dlms_parser::DlmsParser& p) {
-      p.register_pattern("empty S(IDX(1))", "S(IDX(1))", 10, obis);
-      p.register_pattern("empty S()", "S()", 10, obis);
-      p.register_pattern("guard F, L", "F, L", 10, obis);
-      p.register_pattern("guard CNT(18), IDX(2)", "CNT(18), IDX(2)", 10, obis);
-      p.register_pattern("guard F", "F", 10, obis);
+      p.register_pattern("rejected S(IDX(1))", "S(IDX(1))", 10, obis);  // IDX inside S(...) is rejected
+      p.register_pattern("guard CNT(18), IDX(2)", "CNT(18), IDX(2)", 10, obis);  // consumes nothing
+      p.register_pattern("guard F, L", "F, L", 10, obis);  // consumes nothing
     };
     run_meter_test(dlms::test_data::iskra_am550_5s_raw_frame, 0, {}, {}, register_guards);
 

@@ -97,7 +97,7 @@ private:
   // Pattern registry
   std::array<AxdrDescriptorPattern, MAX_PATTERNS> patterns_;
   size_t patterns_count_{ 0 };
-  // Returns nullptr if the pattern was rejected (invalid DSL or registry full)
+  // Returns nullptr if the pattern was rejected (invalid IDX/CNT usage)
   AxdrDescriptorPattern* register_pattern_dsl_(const char* name, std::string_view dsl, int priority);
 
   // Parse-time state — reset at the start of each parse() call
